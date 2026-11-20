@@ -7,6 +7,7 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -503,4 +504,232 @@ public class OrdersPlugin extends JavaPlugin implements Listener {
         Order o = new Order(UUID.randomUUID(), p.getUniqueId(), p.getName(), d.item.clone(), d.amount, d.price,
                 0, 0, now, now + dur);
         orders.put(o.id, o);
-        drafts.remove
+        drafts.remove(p.getUniqueId());
+        save();
+        send(p, "order-created", "total", money.format(total));
+        openMine(p);
+    }
+
+    // ---------- events ----------
+    @EventHandler
+    public void onClick(InventoryClickEvent e) {
+        Inventory top = e.getView().getTopInventory();
+        if (e.getWhoClicked() instanceof Player ap && awaiting.containsKey(ap.getUniqueId())
+                && top.getType() == InventoryType.ANVIL) {
+            e.setCancelled(true);
+            if (e.getRawSlot() == 2 && e.getView() instanceof AnvilView av) {
+                Stage st = awaiting.get(ap.getUniqueId());
+                String t = av.getRenameText();
+                String text = (t == null || t.isBlank()) ? "1" : t.trim();
+                later(() -> handleInput(ap, st, text));
+            }
+            return;
+        }
+        if (!(top.getHolder() instanceof Menu m)) return;
+        if (!(e.getWhoClicked() instanceof Player p)) return;
+        boolean inTop = e.getClickedInventory() == top;
+        int slot = e.getSlot();
+
+        if (m.type == Type.DELIVER) {
+            if (e.getAction() == InventoryAction.COLLECT_TO_CURSOR) {
+                e.setCancelled(true);
+                return;
+            }
+            if (inTop && slot >= 45) {
+                e.setCancelled(true);
+                if (slot == 49) deliver(p, m);
+                else if (slot == 45) later(p::closeInventory);
+            }
+            return;
+        }
+
+        e.setCancelled(true);
+
+        switch (m.type) {
+            case BROWSE -> {
+                if (!inTop) return;
+                if (slot == 45) later(() -> openBrowse(p, m.page - 1));
+                else if (slot == 53) later(() -> openBrowse(p, m.page + 1));
+                else if (slot == 46) {
+                    sorts.put(p.getUniqueId(), sorts.getOrDefault(p.getUniqueId(), Sort.RECENT).next());
+                    later(() -> openBrowse(p, 0));
+                } else if (slot == 49) later(() -> openBrowse(p, m.page));
+                else if (slot == 50) later(() -> openMine(p));
+                else if (slot < 45) {
+                    List<Order> list = browseList(p);
+                    int idx = m.page * 45 + slot;
+                    if (idx >= list.size()) return;
+                    Order o = list.get(idx);
+                    if (o.owner.equals(p.getUniqueId())) later(() -> openMine(p));
+                    else later(() -> openDeliver(p, o));
+                }
+            }
+            case MINE -> {
+                if (!inTop) return;
+                if (slot == 45) later(() -> openBrowse(p, 0));
+                else if (slot == 49) {
+                    ItemStack it = e.getCurrentItem();
+                    if (it != null && it.getType() == Material.LIME_DYE) {
+                        drafts.put(p.getUniqueId(), new Draft());
+                        later(() -> openPick(p));
+                    }
+                } else if (slot < 45) {
+                    List<Order> list = mineList(p);
+                    if (slot >= list.size()) return;
+                    Order o = list.get(slot);
+                    if (e.isRightClick() || e.isShiftClick()) later(() -> cancel(p, o));
+                    else later(() -> collect(p, o));
+                }
+            }
+            case PICK -> {
+                Draft d = drafts.computeIfAbsent(p.getUniqueId(), k -> new Draft());
+                if (inTop) {
+                    if (slot == 22) {
+                        drafts.remove(p.getUniqueId());
+                        later(() -> openMine(p));
+                    }
+                    return;
+                }
+                ItemStack cur = e.getCurrentItem();
+                if (cur == null || cur.getType().isAir()) return;
+                ItemStack pick = cur.clone();
+                pick.setAmount(1);
+                d.item = pick;
+                if (d.amount <= 0) later(() -> prompt(p, Stage.AMOUNT));
+                else later(() -> openReview(p));
+            }
+            case REVIEW -> {
+                if (!inTop) return;
+                switch (slot) {
+                    case 10 -> {
+                        drafts.remove(p.getUniqueId());
+                        later(() -> openMine(p));
+                    }
+                    case 12 -> later(() -> openPick(p));
+                    case 14 -> later(() -> prompt(p, Stage.AMOUNT));
+                    case 16 -> later(() -> prompt(p, Stage.PRICE));
+                    case 22 -> later(() -> createOrder(p));
+                    default -> {
+                    }
+                }
+            }
+            default -> {
+            }
+        }
+    }
+
+    @EventHandler
+    public void onDrag(InventoryDragEvent e) {
+        Inventory top = e.getView().getTopInventory();
+        if (top.getType() == InventoryType.ANVIL && awaiting.containsKey(e.getWhoClicked().getUniqueId())) {
+            e.setCancelled(true);
+            return;
+        }
+        if (!(top.getHolder() instanceof Menu m)) return;
+        if (m.type == Type.DELIVER) {
+            for (int s : e.getRawSlots()) {
+                if (s >= 45 && s < 54) {
+                    e.setCancelled(true);
+                    return;
+                }
+            }
+        } else {
+            for (int s : e.getRawSlots()) {
+                if (s < top.getSize()) {
+                    e.setCancelled(true);
+                    return;
+                }
+            }
+        }
+    }
+
+    @EventHandler
+    public void onClose(InventoryCloseEvent e) {
+        if (e.getInventory().getType() == InventoryType.ANVIL && e.getPlayer() instanceof Player ap
+                && (awaiting.containsKey(ap.getUniqueId()) || drafts.containsKey(ap.getUniqueId()))) {
+            e.getInventory().clear(); // don't hand the placeholder item to the player
+            if (awaiting.remove(ap.getUniqueId()) != null) { // closed manually = cancel
+                later(() -> {
+                    if (!ap.isOnline()) return;
+                    Draft d = drafts.get(ap.getUniqueId());
+                    if (d != null && d.item != null && d.amount > 0 && d.price > 0) openReview(ap);
+                    else {
+                        drafts.remove(ap.getUniqueId());
+                        openMine(ap);
+                    }
+                });
+            }
+            return;
+        }
+        if (!(e.getInventory().getHolder() instanceof Menu m)) return;
+        if (m.type != Type.DELIVER) return;
+        Player p = (Player) e.getPlayer();
+        for (int i = 0; i < 45; i++) {
+            ItemStack s = m.inv.getItem(i);
+            if (s == null) continue;
+            m.inv.setItem(i, null);
+            p.getInventory().addItem(s).values()
+                    .forEach(left -> p.getWorld().dropItemNaturally(p.getLocation(), left));
+        }
+    }
+
+    @EventHandler
+    public void onPrepare(PrepareAnvilEvent e) {
+        if (!(e.getView().getPlayer() instanceof Player p) || !awaiting.containsKey(p.getUniqueId())) return;
+        AnvilView v = e.getView();
+        ItemStack left = v.getItem(0);
+        if (left == null) return;
+        String t = v.getRenameText();
+        if (t == null || t.isBlank()) t = "1";
+        ItemStack r = left.clone();
+        ItemMeta im = r.getItemMeta();
+        im.displayName(Component.text(t));
+        r.setItemMeta(im);
+        e.setResult(r);
+        v.setRepairCost(0);
+    }
+
+    private void handleInput(Player p, Stage st, String text) {
+        if (st == null || awaiting.get(p.getUniqueId()) != st) return;
+        Draft d = drafts.get(p.getUniqueId());
+        if (d == null || d.item == null) {
+            awaiting.remove(p.getUniqueId());
+            later(p::closeInventory);
+            return;
+        }
+        if (st == Stage.AMOUNT) {
+            int max = getConfig().getInt("max-amount", 2304);
+            int v;
+            try {
+                v = Integer.parseInt(text.replace(",", ""));
+            } catch (NumberFormatException ex) {
+                v = -1;
+            }
+            if (v < 1 || v > max) {
+                send(p, "invalid-amount", "max", String.valueOf(max));
+                return; // anvil stays open
+            }
+            d.amount = v;
+        } else {
+            double v = parseMoney(text);
+            double max = getConfig().getDouble("max-price", 1_000_000_000);
+            if (v <= 0 || v > max) {
+                send(p, "invalid-price");
+                return;
+            }
+            d.price = v;
+        }
+        awaiting.remove(p.getUniqueId());
+        later(() -> {
+            p.closeInventory();
+            if (st == Stage.AMOUNT && d.price <= 0) prompt(p, Stage.PRICE);
+            else openReview(p);
+        });
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent e) {
+        drafts.remove(e.getPlayer().getUniqueId());
+        awaiting.remove(e.getPlayer().getUniqueId());
+    }
+}

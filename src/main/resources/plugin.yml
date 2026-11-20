@@ -1,0 +1,16 @@
+name: ZyvenOrderv2
+version: 1.0.0
+main: me.orders.OrdersPlugin
+api-version: '1.21'
+depend: [Vault]
+description: DonutSMP style orders GUI (1.21 - 1.21.11)
+commands:
+  orders:
+    description: Open the orders menu
+    aliases: [order]
+    permission: orders.use
+permissions:
+  orders.use:
+    default: true
+  orders.admin:
+    default: op

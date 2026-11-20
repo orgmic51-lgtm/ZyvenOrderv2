@@ -1,0 +1,37 @@
+# ZyvenOrderv2 config
+# Colors use & codes (e.g. &a green, &9 blue, &f white, &7 gray).
+# Reload with /orders reload (permission: orders.admin)
+
+# Shown before every chat message from the plugin
+prefix: "&8[&bOrders&8] &7"
+
+# Everyone gets this many open orders. Give more with permission: orders.max.<number>
+default-max-orders: 3
+
+# How long an order lasts before it expires (remaining money is refunded)
+order-duration-hours: 168
+
+max-amount: 2304
+max-price: 1000000000
+
+# Placeholders in {braces} are replaced automatically. Don't remove them.
+messages:
+  no-permission: "&cYou don't have permission."
+  reloaded: "Config reloaded."
+  order-expired: "Your order for &f{item} &7expired. Remaining money refunded."
+  prompt-amount: "Type the amount (1-{max}) and click the result item."
+  prompt-price: "Type the price per item (e.g. 10, 2.5k, 1m) and click the result item."
+  invalid-amount: "&cInvalid amount. Use a number from 1 to {max}."
+  invalid-price: "&cInvalid price. Minimum: $1."
+  order-unavailable: "&cThat order is no longer available."
+  put-items-first: "&cPut the requested items in the top slots first."
+  delivered-self: "Delivered &f{amount}x {item} &7and earned &a${money}&7."
+  # Sent to the order owner when someone delivers: amount is blue, item is white
+  delivered-owner: "&f{player} &7delivered you &9{amount}x &f{item}"
+  nothing-to-collect: "&cNothing to collect yet."
+  collected: "Collected &f{amount}x {item}&7."
+  order-cancelled: "Order cancelled. Refunded &a${refund}&7."
+  order-cancelled-collected: "Order cancelled. Refunded &a${refund}&7 and collected &f{amount}x&7."
+  max-orders: "&cYou reached your max orders."
+  not-enough-money: "&cYou need &a${total} &cto create this order."
+  order-created: "Order created! &a${total} &7held until it's filled."

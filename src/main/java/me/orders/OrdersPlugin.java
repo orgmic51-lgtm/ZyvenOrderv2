@@ -24,7 +24,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.MenuType;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.view.AnvilView;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.permissions.PermissionAttachmentInfo;
@@ -413,14 +413,14 @@ public class OrdersPlugin extends JavaPlugin implements Listener {
     private void prompt(Player p, Stage st) {
         Draft d = drafts.get(p.getUniqueId());
         if (d == null || d.item == null) return;
-        AnvilView view = MenuType.ANVIL.create(p, Component.text(st == Stage.AMOUNT ? "How many?" : "Price per item?"));
+        InventoryView view = p.openAnvil(null, true);
+        if (view == null) return;
         ItemStack left = d.item.clone();
         ItemMeta im = left.getItemMeta();
         im.displayName(Component.text("1"));
         left.setItemMeta(im);
         view.setItem(0, left);
-        p.openInventory(view);
-        awaiting.put(p.getUniqueId(), st); // after openInventory so the previous menu's close event is ignored
+        awaiting.put(p.getUniqueId(), st); // set after opening so the previous menu close event is ignored
         if (st == Stage.AMOUNT) send(p, "prompt-amount", "max", String.valueOf(getConfig().getInt("max-amount", 2304)));
         else send(p, "prompt-price");
     }
